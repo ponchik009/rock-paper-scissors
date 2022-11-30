@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"
+      crossorigin="anonymous"
+    ></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  </head>
+
+  <body>
+    <div class="container">
+      <h2 class="title">РАСПОЗНАВАНИЕ</h2>
+      <h2 class="figure"></h2>
+      <video class="input_video"></video>
+      <canvas
+        class="output_canvas"
+        width="640px"
+        height="480px"
+        style="display: none"
+      ></canvas>
+      <div>
+        <button class="start-button">ГОТОВ</button>
+      </div>
+    </div>
+  </body>
+
+  <script type="module">
+    // const IP = "192.168.43.66";
+    const IP = "192.168.165.210";
+
+    const socket = io(`ws://${IP}:3001`);
+
+    let connected = false;
+
+    socket.emit("ROOM.JOIN");
+
+    socket.on("ROOM.WAIT", () => {
+      connected = true;
+    });
+
+    let ready = false;
+
+    socket.on("ROOM.READY", () => {
+      ready = true;
+    });
+
+    let go = false;
+
+    socket.on("ROOM.GO", () => {
+      readyButton.disabled = true;
+      go = true;
+      let count = 3;
+      title.innerText = count;
+      let timer = null;
+      timer = setInterval(() => {
+        count -= 1;
+        title.innerText = count;
+        if (count === 0) {
+          started = false;
+          socket.emit("ROOM.RESULT", { coordinates });
+          clearInterval(recognizeTimer);
+          clearInterval(timer);
+        }
+      }, 1000);
+    });
+
+    const title = document.querySelector(".title");
+    const figure = document.querySelector(".figure");
+    const videoElement = document.querySelector(".input_video");
+    const canvasElement = document.querySelector(".output_canvas");
+    const canvasCtx = canvasElement.getContext("2d");
+
+    const readyButton = document.querySelector(".start-button");
+    readyButton.disabled = true;
+    let started = true;
+
+    readyButton.addEventListener("click", () => {
+      socket.emit("ROOM.READY");
+      readyButton.disabled = true;
+    });
+
+    let coordinates = null;
+
+    const recognizeTimer = setInterval(() => {
+      if (coordinates) {
+        socket.emit("ROOM.RECOGNIZE", { coordinates });
+      } else {
+        figure.innerText = figures[666];
+      }
+    }, 1000);
+
+    const figures = {
+      0: "Paper",
+      1: "Rock",
+      2: "Scissors",
+      666: "Не распознано",
+    };
+
+    socket.on("ROOM.RECOGNIZE", (data) => {
+      // console.log(data);
+      figure.innerText = figures[data];
+    });
+
+    socket.on("ROOM.RESULT", (data) => {
+      console.log(data);
+      if (data === null) {
+        title.innerText = "Ничья";
+      } else if (socket.id === data) {
+        title.innerText = "Победа";
+      } else {
+        title.innerText = "Поражение";
+      }
+    });
+
+    function onResults(results) {
+      // ?
+      if (!started) return;
+
+      videoElement.style.display = "none";
+      canvasElement.style.display = "block";
+
+      if (connected && !go) {
+        title.innerText = "ПОИСК СОПЕРНИКА";
+      }
+
+      if (ready && !go) {
+        readyButton.disabled = false;
+        title.innerText = "Соперник найден. Ожидание готовности";
+      }
+
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(
+        results.image,
+        0,
+        0,
+        canvasElement.width,
+        canvasElement.height
+      );
+      if (results.multiHandLandmarks) {
+        coordinates = results.multiHandLandmarks[0];
+
+        for (const landmarks of results.multiHandLandmarks) {
+          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
+            color: "#00FF00",
+            lineWidth: 5,
+          });
+          drawLandmarks(canvasCtx, landmarks, {
+            color: "#FF0000",
+            lineWidth: 2,
+          });
+        }
+      } else {
+        coordinates = null;
+      }
+      canvasCtx.restore();
+    }
+
+    const hands = new Hands({
+      locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+      },
+    });
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+    hands.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({ image: videoElement });
+      },
+      width: 640,
+      height: 480,
+    });
+    camera.start();
+  </script>
+</html>
