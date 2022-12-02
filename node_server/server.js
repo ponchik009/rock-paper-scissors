@@ -1,9 +1,20 @@
 const { default: axios } = require("axios");
 const express = require("express");
 const useSocket = require("socket.io");
+const https = require("https");
+const fs = require("fs");
+const path = require("path");
+
+const privateKey = fs.readFileSync(
+  path.resolve(__dirname, "..", ".vscode/privatekey.key")
+);
+const certificate = fs.readFileSync(
+  path.resolve(__dirname, "..", ".vscode/certificate.crt")
+);
 
 const app = express();
-const server = require("http").Server(app);
+// const server = require("http").Server(app);
+const server = https.createServer({ key: privateKey, cert: certificate }, app);
 const io = useSocket(server, {
   cors: {
     origin: "*",
@@ -166,9 +177,6 @@ io.on("connection", (socket) => {
   console.log("user connected", socket.id);
 });
 
-server.listen(PORT, (error) => {
-  if (error) {
-    throw Error(error);
-  }
-  console.log("Server starts!");
+server.listen(3001, () => {
+  console.log(`Example app listening on port ${3001}`);
 });
