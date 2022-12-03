@@ -4,6 +4,7 @@ const useSocket = require("socket.io");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
+const { v4: uuidv4 } = require("uuid");
 
 const privateKey = fs.readFileSync(
   path.resolve(__dirname, "..", ".vscode/privatekey.key")
@@ -21,8 +22,6 @@ const io = useSocket(server, {
   },
 });
 
-// const IP = "192.168.43.66";
-// const IP = "192.168.165.210";
 const IP = "localhost";
 
 app.use(express.json());
@@ -55,36 +54,45 @@ function getWinner(r1, r2) {
 /*
  СОКЕТ
 */
-const roomId = "random_string";
 
 io.on("connection", (socket) => {
   socket.on("ROOM.JOIN", () => {
-    if (!rooms.has(roomId)) {
-      socket.join(roomId);
-      const users = new Map();
-      users.set(socket.id, {
-        name: "user " + socket.id,
-        ready: false,
-        result: null,
-      });
-      rooms.set(roomId, users);
-      socket.emit("ROOM.WAIT");
-    } else {
-      if (rooms.get(roomId).size === 1) {
-        socket.join(roomId);
-        rooms.get(roomId).set(socket.id, {
+    for (let [id, room] of rooms) {
+      if (room.size === 1) {
+        room.set(socket.id, {
           name: "user " + socket.id,
           ready: false,
           result: null,
+          image: null,
         });
-        socket.to(roomId).emit("ROOM.READY");
-        socket.emit("ROOM.READY");
+        socket.join(id);
+        socket.to(id).emit("ROOM.READY", { roomId: id });
+        socket.emit("ROOM.READY", { roomId: id });
+
+        console.log(rooms);
+
+        return;
       }
     }
+
+    const roomId = uuidv4();
+
+    socket.join(roomId);
+    const users = new Map();
+    users.set(socket.id, {
+      name: "user " + socket.id,
+      ready: false,
+      result: null,
+      image: null,
+    });
+    rooms.set(roomId, users);
+    socket.emit("ROOM.WAIT", { roomId });
+
     console.log(rooms);
   });
 
-  socket.on("ROOM.READY", () => {
+  socket.on("ROOM.READY", ({ roomId }) => {
+    console.log(roomId);
     rooms
       .get(roomId)
       .set(socket.id, { ...rooms.get(roomId).get(socket.id), ready: true });
@@ -93,12 +101,13 @@ io.on("connection", (socket) => {
         ([socketId, user]) => user.ready
       )
     ) {
-      socket.emit("ROOM.GO");
-      socket.to(roomId).emit("ROOM.GO");
+      socket.emit("ROOM.GO", { roomId });
+      socket.to(roomId).emit("ROOM.GO", { roomId });
     }
   });
 
   socket.on("ROOM.RECOGNIZE", ({ coordinates }) => {
+    // console.log(image);
     if (coordinates === null) return;
     // логика распознавания
     // console.log(coordinates);
@@ -110,11 +119,13 @@ io.on("connection", (socket) => {
       .catch((e) => socket.emit("ROOM.RECOGNIZE", 666));
   });
 
-  socket.on("ROOM.RESULT", async ({ coordinates }) => {
+  socket.on("ROOM.RESULT", async ({ coordinates, image, roomId }) => {
     if (!coordinates) {
-      rooms
-        .get(roomId)
-        .set(socket.id, { ...rooms.get(roomId).get(socket.id), result: 666 });
+      rooms.get(roomId).set(socket.id, {
+        ...rooms.get(roomId).get(socket.id),
+        result: 666,
+        image,
+      });
     } else {
       const result = await axios
         .post(`http://${IP}:5000/recognize`, coordinates)
@@ -128,6 +139,7 @@ io.on("connection", (socket) => {
       rooms.get(roomId).set(socket.id, {
         ...rooms.get(roomId).get(socket.id),
         result: +result,
+        image,
       });
     }
 
@@ -141,22 +153,72 @@ io.on("connection", (socket) => {
 
       switch (winner) {
         case 0:
-          socket.to(roomId).emit("ROOM.RESULT", null);
-          socket.emit("ROOM.RESULT", null);
+          socket.to(roomId).emit("ROOM.RESULT", {
+            roomId,
+            result: null,
+            rivalImage: Array.from(rooms.get(roomId).values()).find(
+              (u) => u.name.substring(5) === socket.id
+            ).image,
+          });
+          socket.emit("ROOM.RESULT", {
+            roomId,
+            result: null,
+            rivalImage: Array.from(rooms.get(roomId).values()).find(
+              (u) => u.name.substring(5) !== socket.id
+            ).image,
+          });
           break;
         case 1:
-          socket.to(roomId).emit("ROOM.RESULT", entries[0][0]);
-          socket.emit("ROOM.RESULT", entries[0][0]);
+          socket.to(roomId).emit("ROOM.RESULT", {
+            roomId,
+            result: entries[0][0],
+            rivalImage: Array.from(rooms.get(roomId).values()).find(
+              (u) => u.name.substring(5) === socket.id
+            ).image,
+          });
+          socket.emit("ROOM.RESULT", {
+            roomId,
+            result: entries[0][0],
+            rivalImage: Array.from(rooms.get(roomId).values()).find(
+              (u) => u.name.substring(5) !== socket.id
+            ).image,
+          });
           break;
         case -1:
-          socket.to(roomId).emit("ROOM.RESULT", entries[1][0]);
-          socket.emit("ROOM.RESULT", entries[1][0]);
+          socket.to(roomId).emit("ROOM.RESULT", {
+            roomId,
+            result: entries[1][0],
+            rivalImage: Array.from(rooms.get(roomId).values()).find(
+              (u) => u.name.substring(5) === socket.id
+            ).image,
+          });
+          socket.emit("ROOM.RESULT", {
+            roomId,
+            result: entries[1][0],
+            rivalImage: Array.from(rooms.get(roomId).values()).find(
+              (u) => u.name.substring(5) !== socket.id
+            ).image,
+          });
           break;
         default:
-          socket.to(roomId).emit("ROOM.RESULT", null);
-          socket.emit("ROOM.RESULT", null);
+          socket.to(roomId).emit("ROOM.RESULT", {
+            roomId,
+            result: null,
+            rivalImage: Array.from(rooms.get(roomId).values()).find(
+              (u) => u.name.substring(5) === socket.id
+            ).image,
+          });
+          socket.emit("ROOM.RESULT", {
+            roomId,
+            result: null,
+            rivalImage: Array.from(rooms.get(roomId).values()).find(
+              (u) => u.name.substring(5) !== socket.id
+            ).image,
+          });
           break;
       }
+
+      rooms.delete(roomId);
     }
   });
 
@@ -165,7 +227,7 @@ io.on("connection", (socket) => {
     rooms.forEach((roomUsers, roomId) => {
       if (roomUsers.delete(socket.id)) {
         if (roomUsers.size === 1) {
-          socket.to(roomId).emit("ROOM.UNREADY");
+          socket.to(roomId).emit("ROOM.UNREADY", { roomId });
         }
         if (roomUsers.size === 0) {
           rooms.delete(roomId);

@@ -27,46 +27,83 @@
   </head>
 
   <body>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+      }
+      .screens {
+        display: flex;
+        gap: 16px;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+      }
+      button {
+        padding: 8px 24px;
+      }
+    </style>
     <div class="container">
       <h2 class="title">РАСПОЗНАВАНИЕ</h2>
       <h2 class="figure"></h2>
-      <video class="input_video"></video>
-      <canvas
-        class="output_canvas"
-        width="640px"
-        height="480px"
-        style="display: none"
-      ></canvas>
+      <div class="screens">
+        <video class="input_video"></video>
+        <canvas
+          class="output_canvas"
+          width="640px"
+          height="480px"
+          style="display: none"
+        ></canvas>
+        <img
+          src=""
+          alt="rival image"
+          id="rival-image"
+          width="640px"
+          height="480px"
+          style="display: none"
+        />
+      </div>
       <div>
         <button class="start-button">ГОТОВ</button>
+        <button class="reload-button" style="display: none">Заново</button>
       </div>
     </div>
   </body>
 
   <script type="module">
-    // const IP = "192.168.43.66";
-    const IP = "192.168.165.210";
+    const IP = "192.168.43.66";
+    // const IP = "192.168.165.210";
+    // const IP = "192.168.0.8";
+    // const IP = "172.20.10.7";
 
     const socket = io(`ws://${IP}:3001`);
+
+    let roomId = null;
 
     let connected = false;
 
     socket.emit("ROOM.JOIN");
 
-    socket.on("ROOM.WAIT", () => {
+    socket.on("ROOM.WAIT", ({ roomId: id }) => {
       connected = true;
+      roomId = id;
     });
 
     let ready = false;
 
-    socket.on("ROOM.READY", () => {
+    socket.on("ROOM.READY", ({ roomId: id }) => {
       ready = true;
+      roomId = id;
     });
 
     let go = false;
 
     socket.on("ROOM.GO", () => {
       readyButton.disabled = true;
+      readyButton.style.display = "none";
       go = true;
       let count = 3;
       title.innerText = count;
@@ -76,7 +113,16 @@
         title.innerText = count;
         if (count === 0) {
           started = false;
-          socket.emit("ROOM.RESULT", { coordinates });
+
+          reloadButton.style.display = "block";
+
+          const image = canvasElement.toDataURL();
+
+          socket.emit("ROOM.RESULT", {
+            coordinates,
+            image,
+            roomId,
+          });
           clearInterval(recognizeTimer);
           clearInterval(timer);
         }
@@ -90,12 +136,24 @@
     const canvasCtx = canvasElement.getContext("2d");
 
     const readyButton = document.querySelector(".start-button");
+    const reloadButton = document.querySelector(".reload-button");
+
+    const rivalImage = document.querySelector("#rival-image");
+
     readyButton.disabled = true;
     let started = true;
 
+    let readyPressed = false;
+
     readyButton.addEventListener("click", () => {
-      socket.emit("ROOM.READY");
+      socket.emit("ROOM.READY", { roomId });
+      readyPressed = true;
       readyButton.disabled = true;
+      readyButton.innerText = "Ожидание соперника";
+    });
+
+    reloadButton.addEventListener("click", () => {
+      window.location.reload();
     });
 
     let coordinates = null;
@@ -103,15 +161,16 @@
     const recognizeTimer = setInterval(() => {
       if (coordinates) {
         socket.emit("ROOM.RECOGNIZE", { coordinates });
+        // console.log(image);
       } else {
         figure.innerText = figures[666];
       }
-    }, 1000);
+    }, 20);
 
     const figures = {
-      0: "Paper",
-      1: "Rock",
-      2: "Scissors",
+      0: "Бумага",
+      1: "Камень",
+      2: "Ножницы",
       666: "Не распознано",
     };
 
@@ -120,15 +179,18 @@
       figure.innerText = figures[data];
     });
 
-    socket.on("ROOM.RESULT", (data) => {
-      console.log(data);
-      if (data === null) {
+    socket.on("ROOM.RESULT", ({ result, rivalImage: image }) => {
+      rivalImage.style.display = "block";
+      rivalImage.src = image;
+
+      if (result === null) {
         title.innerText = "Ничья";
-      } else if (socket.id === data) {
+      } else if (socket.id === result) {
         title.innerText = "Победа";
       } else {
         title.innerText = "Поражение";
       }
+      socket.disconnect();
     });
 
     function onResults(results) {
@@ -143,7 +205,7 @@
       }
 
       if (ready && !go) {
-        readyButton.disabled = false;
+        if (!readyPressed) readyButton.disabled = false;
         title.innerText = "Соперник найден. Ожидание готовности";
       }
 
