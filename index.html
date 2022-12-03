@@ -153,7 +153,11 @@
     });
 
     reloadButton.addEventListener("click", () => {
-      window.location.reload();
+      // window.location.reload();
+      socket.connect();
+      socket.emit("ROOM.JOIN");
+
+      // нужно ресетить состояния переменных, dom-элементов
     });
 
     let coordinates = null;
