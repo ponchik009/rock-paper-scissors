@@ -47,6 +47,7 @@
       }
     </style>
     <div class="container">
+      <h1>Хеш комнаты:</h1>
       <h2 class="title">РАСПОЗНАВАНИЕ</h2>
       <h2 class="figure"></h2>
       <div class="screens">
@@ -74,9 +75,22 @@
   </body>
 
   <script type="module">
-    const IP = "192.168.43.66";
+    const roomTitle = document.querySelector("h1");
+    const title = document.querySelector(".title");
+    const figure = document.querySelector(".figure");
+    const videoElement = document.querySelector(".input_video");
+    const canvasElement = document.querySelector(".output_canvas");
+    const canvasCtx = canvasElement.getContext("2d");
+
+    const readyButton = document.querySelector(".start-button");
+    const reloadButton = document.querySelector(".reload-button");
+
+    const rivalImage = document.querySelector("#rival-image");
+
+    const maxPlayers = 5;
+    // const IP = "192.168.43.66";
     // const IP = "192.168.165.210";
-    // const IP = "192.168.0.8";
+    const IP = "192.168.0.8";
     // const IP = "172.20.10.7";
 
     const socket = io(`ws://${IP}:3001`);
@@ -85,21 +99,31 @@
 
     let connected = false;
 
-    socket.emit("ROOM.JOIN");
-
-    socket.on("ROOM.WAIT", ({ roomId: id }) => {
-      connected = true;
-      roomId = id;
-    });
-
     let ready = false;
 
-    socket.on("ROOM.READY", ({ roomId: id }) => {
-      ready = true;
+    let go = false;
+
+    readyButton.disabled = true;
+    let started = true;
+
+    let readyPressed = false;
+
+    socket.emit("ROOM.JOIN");
+
+    socket.on("ROOM.WAIT", ({ roomId: id, count }) => {
+      connected = true;
       roomId = id;
+      roomTitle.innerText = "Хеш комнаты: " + roomId;
+      // title.innerText = "ПОИСК СОПЕРНИКА";
+      title.innerText = count + "/" + maxPlayers;
     });
 
-    let go = false;
+    socket.on("ROOM.READY", ({ roomId: id, count }) => {
+      ready = true;
+      roomId = id;
+      roomTitle.innerText = "Хеш комнаты: " + roomId;
+      title.innerText = "Соперники найдены. Ожидание готовности";
+    });
 
     socket.on("ROOM.GO", () => {
       readyButton.disabled = true;
@@ -129,21 +153,14 @@
       }, 1000);
     });
 
-    const title = document.querySelector(".title");
-    const figure = document.querySelector(".figure");
-    const videoElement = document.querySelector(".input_video");
-    const canvasElement = document.querySelector(".output_canvas");
-    const canvasCtx = canvasElement.getContext("2d");
-
-    const readyButton = document.querySelector(".start-button");
-    const reloadButton = document.querySelector(".reload-button");
-
-    const rivalImage = document.querySelector("#rival-image");
-
-    readyButton.disabled = true;
-    let started = true;
-
-    let readyPressed = false;
+    socket.on("ROOM.UNREADY", ({ roomId: id, count }) => {
+      ready = false;
+      go = false;
+      readyButton.disabled = true;
+      started = true;
+      readyPressed = false;
+      title.innerText = count + "/" + maxPlayers;
+    });
 
     readyButton.addEventListener("click", () => {
       socket.emit("ROOM.READY", { roomId });
@@ -183,13 +200,14 @@
       figure.innerText = figures[data];
     });
 
-    socket.on("ROOM.RESULT", ({ result, rivalImage: image }) => {
-      rivalImage.style.display = "block";
-      rivalImage.src = image;
+    socket.on("ROOM.RESULT", ({ result, rivalImages: images }) => {
+      // TODO отображение картинок проигравших
+      // rivalImage.style.display = "block";
+      // rivalImage.src = image;
 
-      if (result === null) {
+      if (result === 0) {
         title.innerText = "Ничья";
-      } else if (socket.id === result) {
+      } else if (result === 1) {
         title.innerText = "Победа";
       } else {
         title.innerText = "Поражение";
@@ -204,13 +222,13 @@
       videoElement.style.display = "none";
       canvasElement.style.display = "block";
 
-      if (connected && !go) {
-        title.innerText = "ПОИСК СОПЕРНИКА";
-      }
+      // if (connected && !go) {
+      //   title.innerText = "ПОИСК СОПЕРНИКА";
+      // }
 
       if (ready && !go) {
         if (!readyPressed) readyButton.disabled = false;
-        title.innerText = "Соперник найден. Ожидание готовности";
+        // title.innerText = "Соперник найден. Ожидание готовности";
       }
 
       canvasCtx.save();

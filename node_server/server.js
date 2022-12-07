@@ -30,44 +30,112 @@ app.use(express.static("./../"));
 
 const PORT = process.env.PORT || 3001;
 
+const figures = {
+  0: "Бумага",
+  1: "Камень",
+  2: "Ножницы",
+  666: "Не распознано",
+};
+
+const victories = {
+  0: [1, 666],
+  1: [2, 666],
+  2: [0, 666],
+  666: [],
+};
+
 const rooms = new Map();
 
 function getWinner(r1, r2) {
   if (r1 === r2) return 0;
 
-  if (r1 === 0) {
-    if (r2 === 1) return 1;
-    else if (r2 === 2) return -1;
+  if (victories[r1].includes(r2)) {
+    return 1;
+  } else {
+    return -1;
+  }
+}
+
+/*
+@params
+results: Array<Result>
+
+interface Result {
+  result: 0 | 1 | 2 | 666;
+  ...any fields
+}
+*/
+function resolveWinners(results) {
+  const figures = results.map((r) => r.result);
+  const figuresWithout666 = figures.filter((f) => f !== 666);
+
+  console.log(figures);
+  console.log(figuresWithout666);
+
+  // у всех не распознано - все проиграли
+  if (figuresWithout666.length === 0) {
+    return results.map((r) => ({ ...r, win: -1 }));
   }
 
-  if (r1 === 1) {
-    if (r2 === 0) return -1;
-    else if (r2 === 2) return 1;
+  const set = new Set(figuresWithout666);
+
+  console.log(set);
+
+  // 3 разных знака - ничья у всех
+  if (set.size === 3) {
+    return results.map((r) => ({ ...r, win: 0 }));
   }
 
-  if (r1 === 2) {
-    if (r2 === 0) return 1;
-    else if (r2 === 1) return -1;
+  // 1 знак, кроме 666
+  if (set.size === 1) {
+    // в массиве есть 666
+    if (figuresWithout666.length !== results.length) {
+      return results.map((r) => ({ ...r, win: r.figure === 666 ? -1 : 1 }));
+    } else {
+      // все показали один знак
+      return results.map((r) => ({ ...r, win: 0 }));
+    }
   }
+
+  // 2 разных знака - определяем победителей и проигравших
+  const [r1, r2] = set.values();
+  const win = getWinner(r1, r2);
+
+  return results.map((r) => ({
+    ...r,
+    win: r.result === 666 ? -1 : r.result === r1 ? win : -win,
+  }));
 }
 
 /*
  СОКЕТ
 */
 
+const maxPlayers = 3;
+
 io.on("connection", (socket) => {
   socket.on("ROOM.JOIN", () => {
+    // console.log(io.sockets.sockets);
     for (let [id, room] of rooms) {
-      if (room.size === 1) {
+      // комната на 5 человек
+      if (room.size < maxPlayers) {
         room.set(socket.id, {
-          name: "user " + socket.id,
+          name: socket.id,
           ready: false,
           result: null,
           image: null,
+          win: null,
         });
+
         socket.join(id);
-        socket.to(id).emit("ROOM.READY", { roomId: id });
-        socket.emit("ROOM.READY", { roomId: id });
+
+        if (room.size === maxPlayers) {
+          socket.to(id).emit("ROOM.READY", { roomId: id, count: maxPlayers });
+          socket.emit("ROOM.READY", { roomId: id, count: maxPlayers });
+        } else {
+          socket.to(id).emit("ROOM.WAIT", { roomId: id, count: room.size });
+          socket.emit("ROOM.WAIT", { roomId: id, count: room.size });
+        }
 
         console.log(rooms);
 
@@ -80,13 +148,13 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     const users = new Map();
     users.set(socket.id, {
-      name: "user " + socket.id,
+      name: socket.id,
       ready: false,
       result: null,
       image: null,
     });
     rooms.set(roomId, users);
-    socket.emit("ROOM.WAIT", { roomId });
+    socket.emit("ROOM.WAIT", { roomId, count: 1 });
 
     console.log(rooms);
   });
@@ -119,6 +187,7 @@ io.on("connection", (socket) => {
       .catch((e) => socket.emit("ROOM.RECOGNIZE", 666));
   });
 
+  // TODO переработать для мультиплеера
   socket.on("ROOM.RESULT", async ({ coordinates, image, roomId }) => {
     if (!coordinates) {
       rooms.get(roomId).set(socket.id, {
@@ -143,79 +212,27 @@ io.on("connection", (socket) => {
       });
     }
 
+    // результаты каждого игрока в комнате получены
     if (
       Array.from(rooms.get(roomId).entries()).every(
         ([socketId, user]) => user.result !== null
       )
     ) {
-      const entries = Array.from(rooms.get(roomId).entries());
-      const winner = getWinner(entries[0][1].result, entries[1][1].result);
+      const users = Array.from(rooms.get(roomId).values());
+      const usersWithResults = resolveWinners(users);
 
-      switch (winner) {
-        case 0:
-          socket.to(roomId).emit("ROOM.RESULT", {
-            roomId,
-            result: null,
-            rivalImage: Array.from(rooms.get(roomId).values()).find(
-              (u) => u.name.substring(5) === socket.id
-            ).image,
-          });
-          socket.emit("ROOM.RESULT", {
-            roomId,
-            result: null,
-            rivalImage: Array.from(rooms.get(roomId).values()).find(
-              (u) => u.name.substring(5) !== socket.id
-            ).image,
-          });
-          break;
-        case 1:
-          socket.to(roomId).emit("ROOM.RESULT", {
-            roomId,
-            result: entries[0][0],
-            rivalImage: Array.from(rooms.get(roomId).values()).find(
-              (u) => u.name.substring(5) === socket.id
-            ).image,
-          });
-          socket.emit("ROOM.RESULT", {
-            roomId,
-            result: entries[0][0],
-            rivalImage: Array.from(rooms.get(roomId).values()).find(
-              (u) => u.name.substring(5) !== socket.id
-            ).image,
-          });
-          break;
-        case -1:
-          socket.to(roomId).emit("ROOM.RESULT", {
-            roomId,
-            result: entries[1][0],
-            rivalImage: Array.from(rooms.get(roomId).values()).find(
-              (u) => u.name.substring(5) === socket.id
-            ).image,
-          });
-          socket.emit("ROOM.RESULT", {
-            roomId,
-            result: entries[1][0],
-            rivalImage: Array.from(rooms.get(roomId).values()).find(
-              (u) => u.name.substring(5) !== socket.id
-            ).image,
-          });
-          break;
-        default:
-          socket.to(roomId).emit("ROOM.RESULT", {
-            roomId,
-            result: null,
-            rivalImage: Array.from(rooms.get(roomId).values()).find(
-              (u) => u.name.substring(5) === socket.id
-            ).image,
-          });
-          socket.emit("ROOM.RESULT", {
-            roomId,
-            result: null,
-            rivalImage: Array.from(rooms.get(roomId).values()).find(
-              (u) => u.name.substring(5) !== socket.id
-            ).image,
-          });
-          break;
+      // console.log(usersWithResults);
+
+      for (let user of usersWithResults) {
+        const rivalImages = users
+          .filter((u) => u.name !== user.name)
+          .map((u) => u.image);
+
+        // отправить конкретному сокету, по socketid
+        io.sockets.sockets.get(user.name).emit("ROOM.RESULT", {
+          result: user.win,
+          rivalImages,
+        });
       }
 
       rooms.delete(roomId);
@@ -226,10 +243,11 @@ io.on("connection", (socket) => {
     console.log("disconnecting");
     rooms.forEach((roomUsers, roomId) => {
       if (roomUsers.delete(socket.id)) {
-        if (roomUsers.size === 1) {
-          socket.to(roomId).emit("ROOM.UNREADY", { roomId });
-        }
-        if (roomUsers.size === 0) {
+        if (roomUsers.size > 0) {
+          socket
+            .to(roomId)
+            .emit("ROOM.UNREADY", { roomId, count: roomUsers.size });
+        } else {
           rooms.delete(roomId);
         }
       }
