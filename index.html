@@ -48,6 +48,7 @@
     </style>
     <div class="container">
       <h1>Хеш комнаты:</h1>
+      <h2 class="round"></h2>
       <h2 class="title">РАСПОЗНАВАНИЕ</h2>
       <h2 class="figure"></h2>
       <div class="screens">
@@ -76,6 +77,7 @@
 
   <script type="module">
     const roomTitle = document.querySelector("h1");
+    const currentRoundTitle = document.querySelector(".round");
     const title = document.querySelector(".title");
     const figure = document.querySelector(".figure");
     const videoElement = document.querySelector(".input_video");
@@ -87,26 +89,36 @@
 
     const rivalImage = document.querySelector("#rival-image");
 
-    const maxPlayers = 5;
+    const maxPlayers = 3;
+    let currentMaxPlayers = maxPlayers;
+    let currentRound = 1;
     // const IP = "192.168.43.66";
     // const IP = "192.168.165.210";
-    const IP = "192.168.0.8";
+    // const IP = "192.168.0.8";
     // const IP = "172.20.10.7";
+    const IP = "127.0.0.1";
+    const port = 3001;
+    // const port = 5000;
 
-    const socket = io(`ws://${IP}:3001`);
+    const socket = io(`${IP}:${port}`);
 
     let roomId = null;
 
+    // игрок подключился, начинаем распознавание
     let connected = false;
 
+    // игрок нажал готовность
     let ready = false;
 
+    // все игроки нажали готовность, игра начинается
     let go = false;
 
     readyButton.disabled = true;
     let started = true;
 
     let readyPressed = false;
+
+    currentRoundTitle.innerText = "Раунд " + currentRound;
 
     socket.emit("ROOM.JOIN");
 
@@ -137,8 +149,6 @@
         title.innerText = count;
         if (count === 0) {
           started = false;
-
-          reloadButton.style.display = "block";
 
           const image = canvasElement.toDataURL();
 
@@ -175,11 +185,21 @@
       socket.emit("ROOM.JOIN");
 
       // нужно ресетить состояния переменных, dom-элементов
+      ready = false;
+      go = false;
+
+      readyButton.disabled = true;
+      readyButton.style.display = "block";
+
+      reloadButton.style.display = "none";
+
+      started = true;
+      readyPressed = false;
     });
 
     let coordinates = null;
 
-    const recognizeTimer = setInterval(() => {
+    let recognizeTimer = setInterval(() => {
       if (coordinates) {
         socket.emit("ROOM.RECOGNIZE", { coordinates });
         // console.log(image);
@@ -205,14 +225,44 @@
       // rivalImage.style.display = "block";
       // rivalImage.src = image;
 
+      currentRound += 1;
+
       if (result === 0) {
+        socket.emit("ROOM.NEXT_ROUND", { roomId });
         title.innerText = "Ничья";
       } else if (result === 1) {
+        socket.emit("ROOM.NEXT_ROUND", { roomId });
         title.innerText = "Победа";
       } else {
+        reloadButton.style.display = "block";
+        socket.disconnect();
         title.innerText = "Поражение";
       }
-      socket.disconnect();
+    });
+
+    socket.on("ROOM.NEXT_ROUND", ({ roomId, count }) => {
+      // currentRound += 1;
+      currentRoundTitle.innerText = "Раунд " + currentRound;
+
+      ready = true;
+      go = false;
+
+      readyButton.disabled = false;
+      readyButton.style.display = "block";
+      readyButton.innerText = "Готов";
+
+      started = true;
+      readyPressed = false;
+      title.innerText = "Ожидание готовности";
+
+      recognizeTimer = setInterval(() => {
+        if (coordinates) {
+          socket.emit("ROOM.RECOGNIZE", { coordinates });
+          // console.log(image);
+        } else {
+          figure.innerText = figures[666];
+        }
+      }, 20);
     });
 
     function onResults(results) {

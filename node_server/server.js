@@ -44,8 +44,6 @@ const victories = {
   666: [],
 };
 
-const rooms = new Map();
-
 function getWinner(r1, r2) {
   if (r1 === r2) return 0;
 
@@ -90,7 +88,7 @@ function resolveWinners(results) {
   if (set.size === 1) {
     // в массиве есть 666
     if (figuresWithout666.length !== results.length) {
-      return results.map((r) => ({ ...r, win: r.figure === 666 ? -1 : 1 }));
+      return results.map((r) => ({ ...r, win: r.result === 666 ? -1 : 1 }));
     } else {
       // все показали один знак
       return results.map((r) => ({ ...r, win: 0 }));
@@ -112,12 +110,13 @@ function resolveWinners(results) {
 */
 
 const maxPlayers = 3;
+const rooms = new Map();
 
 io.on("connection", (socket) => {
   socket.on("ROOM.JOIN", () => {
     // console.log(io.sockets.sockets);
     for (let [id, room] of rooms) {
-      // комната на 5 человек
+      // комната на max человек
       if (room.size < maxPlayers) {
         room.set(socket.id, {
           name: socket.id,
@@ -137,7 +136,7 @@ io.on("connection", (socket) => {
           socket.emit("ROOM.WAIT", { roomId: id, count: room.size });
         }
 
-        console.log(rooms);
+        // console.log(rooms);
 
         return;
       }
@@ -156,7 +155,7 @@ io.on("connection", (socket) => {
     rooms.set(roomId, users);
     socket.emit("ROOM.WAIT", { roomId, count: 1 });
 
-    console.log(rooms);
+    // console.log(rooms);
   });
 
   socket.on("ROOM.READY", ({ roomId }) => {
@@ -235,21 +234,45 @@ io.on("connection", (socket) => {
         });
       }
 
-      rooms.delete(roomId);
+      // rooms.delete(roomId);
+    }
+  });
+
+  socket.on("ROOM.NEXT_ROUND", ({ roomId }) => {
+    console.log(roomId);
+    const room = rooms.get(roomId);
+
+    room.set(socket.id, {
+      name: socket.id,
+      ready: false,
+      result: null,
+      image: null,
+    });
+
+    if (!Array.from(room.values()).some((u) => typeof u.result === "number")) {
+      socket.to(roomId).emit("ROOM.NEXT_ROUND", { roomId, count: room.size });
+      socket.emit("ROOM.NEXT_ROUND", { roomId, count: room.size });
     }
   });
 
   socket.on("disconnect", () => {
     console.log("disconnecting");
     rooms.forEach((roomUsers, roomId) => {
+      // console.log(roomUsers);
+      // console.log(roomUsers.values());
       if (roomUsers.delete(socket.id)) {
-        if (roomUsers.size > 0) {
-          socket
-            .to(roomId)
-            .emit("ROOM.UNREADY", { roomId, count: roomUsers.size });
-        } else {
-          rooms.delete(roomId);
-        }
+        // if (
+        //   roomUsers.size > 0 &&
+        //   Array.from(roomUsers.values()).every(
+        //     (u) => typeof u.result === "null"
+        //   )
+        // ) {
+        //   socket
+        //     .to(roomId)
+        //     .emit("ROOM.UNREADY", { roomId, count: roomUsers.size });
+        // } else {
+        //   rooms.delete(roomId);
+        // }
       }
     });
   });
