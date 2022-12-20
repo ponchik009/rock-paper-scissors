@@ -222,6 +222,11 @@ io.on("connection", (socket) => {
 
       // console.log(usersWithResults);
 
+      const winnersCount = usersWithResults.reduce(
+        (prev, cur) => (cur.win === 1 ? prev + 1 : prev),
+        0
+      );
+
       for (let user of usersWithResults) {
         const rivalImages = users
           .filter((u) => u.name !== user.name)
@@ -231,6 +236,7 @@ io.on("connection", (socket) => {
         io.sockets.sockets.get(user.name).emit("ROOM.RESULT", {
           result: user.win,
           rivalImages,
+          winnersCount,
         });
       }
 
@@ -250,6 +256,7 @@ io.on("connection", (socket) => {
     });
 
     if (!Array.from(room.values()).some((u) => typeof u.result === "number")) {
+      console.log("next round");
       socket.to(roomId).emit("ROOM.NEXT_ROUND", { roomId, count: room.size });
       socket.emit("ROOM.NEXT_ROUND", { roomId, count: room.size });
     }

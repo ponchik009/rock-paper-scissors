@@ -96,7 +96,7 @@
     // const IP = "192.168.165.210";
     // const IP = "192.168.0.8";
     // const IP = "172.20.10.7";
-    const IP = "127.0.0.1";
+    const IP = "localhost";
     const port = 3001;
     // const port = 5000;
 
@@ -152,13 +152,13 @@
 
           const image = canvasElement.toDataURL();
 
+          clearInterval(recognizeTimer);
+          clearInterval(timer);
           socket.emit("ROOM.RESULT", {
             coordinates,
             image,
             roomId,
           });
-          clearInterval(recognizeTimer);
-          clearInterval(timer);
         }
       }, 1000);
     });
@@ -220,25 +220,33 @@
       figure.innerText = figures[data];
     });
 
-    socket.on("ROOM.RESULT", ({ result, rivalImages: images }) => {
-      // TODO отображение картинок проигравших
-      // rivalImage.style.display = "block";
-      // rivalImage.src = image;
+    socket.on(
+      "ROOM.RESULT",
+      ({ result, rivalImages: images, winnersCount }) => {
+        // TODO отображение картинок проигравших
+        // rivalImage.style.display = "block";
+        // rivalImage.src = image;
 
-      currentRound += 1;
+        currentRound += 1;
 
-      if (result === 0) {
-        socket.emit("ROOM.NEXT_ROUND", { roomId });
-        title.innerText = "Ничья";
-      } else if (result === 1) {
-        socket.emit("ROOM.NEXT_ROUND", { roomId });
-        title.innerText = "Победа";
-      } else {
-        reloadButton.style.display = "block";
-        socket.disconnect();
-        title.innerText = "Поражение";
+        if (result === 0) {
+          socket.emit("ROOM.NEXT_ROUND", { roomId });
+          title.innerText = "Ничья";
+        } else if (result === 1) {
+          if (winnersCount > 1) {
+            socket.emit("ROOM.NEXT_ROUND", { roomId });
+          } else {
+            reloadButton.style.display = "block";
+            socket.disconnect();
+          }
+          title.innerText = "Победа";
+        } else {
+          reloadButton.style.display = "block";
+          socket.disconnect();
+          title.innerText = "Поражение";
+        }
       }
-    });
+    );
 
     socket.on("ROOM.NEXT_ROUND", ({ roomId, count }) => {
       // currentRound += 1;
