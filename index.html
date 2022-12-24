@@ -96,7 +96,8 @@
     // const IP = "192.168.165.210";
     // const IP = "192.168.0.8";
     // const IP = "172.20.10.7";
-    const IP = "localhost";
+    // const IP = "https://localhost";
+    const IP = "172.20.10.3";
     const port = 3001;
     // const port = 5000;
 
@@ -233,6 +234,7 @@
           socket.emit("ROOM.NEXT_ROUND", { roomId });
           title.innerText = "Ничья";
         } else if (result === 1) {
+          console.log(winnersCount);
           if (winnersCount > 1) {
             socket.emit("ROOM.NEXT_ROUND", { roomId });
           } else {
@@ -277,7 +279,7 @@
       // ?
       if (!started) return;
 
-      videoElement.style.display = "none";
+      // videoElement.style.display = "none";
       canvasElement.style.display = "block";
 
       // if (connected && !go) {
