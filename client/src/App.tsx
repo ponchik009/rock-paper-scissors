@@ -5,15 +5,31 @@ import { Hands, HAND_CONNECTIONS } from "@mediapipe/hands";
 import classnames from "classnames";
 
 import "./App.css";
+import { socket } from "./api/api";
+import VideoOutput from "./components/VideoOutput/VideoOutput";
+
+const figures = {
+  0: "Бумага",
+  1: "Камень",
+  2: "Ножницы",
+  666: "Не распознано",
+};
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const [recognizeActive, setRecognizeActive] = useState(true);
   const [recognized, setRecognized] = useState(false);
+
+  const [currentFigure, setCurrentFigure] = useState<keyof typeof figures>(666);
 
   useEffect(() => {
     if (!canvasRef.current) return;
+
+    socket.emit("ROOM.JOIN");
+
+    let coordinates;
 
     const canvasCtx = canvasRef.current.getContext("2d")!;
 
@@ -30,19 +46,8 @@ function App() {
       minTrackingConfidence: 0.5,
     });
 
-    let times = 0;
-    let timer: NodeJS.Timeout | null = null;
-    const callback = () => {
-      console.log(1 / times);
-      times = 0;
-      timer = setTimeout(callback, 1000);
-    };
-
     hands.onResults((results) => {
-      times++;
-      if (!timer) {
-        timer = setTimeout(callback, 1000);
-      }
+      if (!recognizeActive) return;
 
       setRecognized(true);
 
@@ -60,7 +65,7 @@ function App() {
         canvasRef.current!.width,
         canvasRef.current!.height
       );
-      let coordinates;
+
       if (results.multiHandLandmarks) {
         coordinates = results.multiHandLandmarks[0];
 
@@ -77,7 +82,14 @@ function App() {
       } else {
         coordinates = null;
       }
+
+      socket.emit("ROOM.RECOGNIZE", { coordinates });
+
       canvasCtx.restore();
+    });
+
+    socket.on("ROOM.RECOGNIZE", (figureNumber: keyof typeof figures) => {
+      setCurrentFigure(figureNumber);
     });
 
     const camera = new Camera(videoRef.current!, {
@@ -90,22 +102,19 @@ function App() {
     camera.start();
   }, []);
 
-  console.log(1);
+  console.log("App component render");
 
   return (
-    <div className="App">
-      <video
-        className={classnames("input_video")}
-        ref={videoRef}
-        hidden={recognized}
-      />
-      <canvas
-        className={classnames("output_canvas")}
-        hidden={!recognized}
-        ref={canvasRef}
-        width="640"
-        height="480"
-      />
+    <div className="app">
+      <main>
+        <h1>{recognized ? figures[currentFigure] : "Распознавание..."}</h1>
+        <VideoOutput
+          recognized={recognized}
+          videoRef={videoRef}
+          canvasRef={canvasRef}
+        />
+      </main>
+      <aside>123</aside>
     </div>
   );
 }
