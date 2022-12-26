@@ -129,13 +129,32 @@ io.on("connection", (socket) => {
         socket.join(id);
 
         if (room.size === maxPlayers) {
-          socket.to(id).emit("ROOM.READY", { roomId: id, count: maxPlayers });
-          socket.emit("ROOM.READY", { roomId: id, count: maxPlayers });
+          socket.to(id).emit("ROOM.CAN_START", {
+            roomId: id,
+            count: maxPlayers,
+            players: Array.from(room.entries()),
+          });
+          socket.emit("ROOM.CAN_START", {
+            roomId: id,
+            count: maxPlayers,
+            players: Array.from(room.entries()),
+          });
         } else {
-          socket.to(id).emit("ROOM.WAIT", { roomId: id, count: room.size });
-          socket.emit("ROOM.WAIT", { roomId: id, count: room.size });
+          socket.to(id).emit("ROOM.WAIT_FOR_PLAYERS", {
+            roomId: id,
+            count: room.size,
+            players: Array.from(room.entries()),
+          });
+          socket.emit("ROOM.WAIT_FOR_PLAYERS", {
+            roomId: id,
+            count: room.size,
+            players: Array.from(room.entries()),
+          });
         }
 
+        socket.emit("ROOM.JOIN", {
+          roomId: id,
+        });
         // console.log(rooms);
 
         return;
@@ -153,16 +172,32 @@ io.on("connection", (socket) => {
       image: null,
     });
     rooms.set(roomId, users);
-    socket.emit("ROOM.WAIT", { roomId, count: 1 });
+    socket.emit("ROOM.WAIT_FOR_PLAYERS", {
+      roomId,
+      count: 1,
+      players: Array.from(users.entries()),
+    });
+
+    socket.emit("ROOM.JOIN", { roomId });
 
     // console.log(rooms);
   });
 
   socket.on("ROOM.READY", ({ roomId }) => {
-    console.log(roomId);
+    if (!rooms.has(roomId)) return;
+
+    console.log("ready", roomId);
     rooms
       .get(roomId)
       .set(socket.id, { ...rooms.get(roomId).get(socket.id), ready: true });
+
+    socket.emit("ROOM.PLAYERS_UPDATE", {
+      players: Array.from(rooms.get(roomId).entries()),
+    });
+    socket.to(roomId).emit("ROOM.PLAYERS_UPDATE", {
+      players: Array.from(rooms.get(roomId).entries()),
+    });
+
     if (
       Array.from(rooms.get(roomId).entries()).every(
         ([socketId, user]) => user.ready
@@ -175,7 +210,7 @@ io.on("connection", (socket) => {
 
   socket.on("ROOM.RECOGNIZE", ({ coordinates }) => {
     // console.log(image);
-    if (coordinates === null) return;
+    if (!coordinates) return socket.emit("ROOM.RECOGNIZE", 666);
     // логика распознавания
     // console.log(coordinates);
     axios
@@ -186,8 +221,9 @@ io.on("connection", (socket) => {
       .catch((e) => socket.emit("ROOM.RECOGNIZE", 666));
   });
 
-  // TODO переработать для мультиплеера
   socket.on("ROOM.RESULT", async ({ coordinates, image, roomId }) => {
+    if (!rooms.has(roomId)) return;
+
     if (!coordinates) {
       rooms.get(roomId).set(socket.id, {
         ...rooms.get(roomId).get(socket.id),
@@ -245,6 +281,8 @@ io.on("connection", (socket) => {
   });
 
   socket.on("ROOM.NEXT_ROUND", ({ roomId }) => {
+    if (!rooms.has(roomId)) return;
+
     console.log(roomId);
     const room = rooms.get(roomId);
 
